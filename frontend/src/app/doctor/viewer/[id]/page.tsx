@@ -2,22 +2,62 @@
 
 import { Navbar } from '@/components/shared/Navbar';
 import { MockMRIViewer } from '@/components/viewers/MockMRIViewer';
+import { RealMRIViewer } from '@/components/viewers/RealMRIViewer';
 import { PredictionCard } from '@/components/shared/PredictionCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { mockMRISessions } from '@/lib/mockData';
-import { Download, ArrowLeft, FileText } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { useSession } from '@/lib/hooks/useApi';
+import { ArrowLeft, Loader2, AlertCircle, FileText, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { use } from 'react';
 
 export default function DoctorViewerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const session = mockMRISessions.find((s) => s.id === id) || mockMRISessions[0];
+  const { data: session, isLoading, error } = useSession(id);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="flex items-center justify-center h-[80vh]">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading session data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !session) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="flex items-center justify-center h-[80vh]">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <p className="text-foreground text-lg mb-2">Session not found</p>
+            <p className="text-muted-foreground mb-4">{error || 'Unable to load session data'}</p>
+            <Button variant="outline" asChild>
+              <Link href="/doctor/dashboard">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Dashboard
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const prediction = session.prediction;
+  const patientName = session.patient?.user_profile?.full_name || 'Unknown Patient';
+  const radiologistName = session.radiologist?.user_profile?.full_name || 'N/A';
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <Navbar userName="Dr. Sarah Mitchell" userRole="doctor" />
+    <div className="min-h-screen bg-background">
+      <Navbar />
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -29,174 +69,204 @@ export default function DoctorViewerPage({ params }: { params: Promise<{ id: str
               </Link>
             </Button>
             <div>
-              <h1 className="text-3xl font-bold">Clinical MRI Review</h1>
+              <h1 className="text-3xl font-bold text-foreground">Clinical MRI Review</h1>
               <p className="text-muted-foreground">
-                Patient: {session.patientName} | Session: {session.sessionCode}
+                Patient: {patientName} | Session: {session.session_code}
               </p>
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
-              <FileText className="h-4 w-4 mr-2" />
-              Patient Report
-            </Button>
-            <Button>
-              <Download className="h-4 w-4 mr-2" />
-              Clinician Report
-            </Button>
+            {prediction?.clinician_pdf_url && (
+              <Button variant="outline" asChild>
+                <a href={prediction.clinician_pdf_url} target="_blank" rel="noopener noreferrer">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Clinician Report
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </a>
+              </Button>
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Viewer Tabs */}
-            <Tabs defaultValue="axial" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="axial">Axial View</TabsTrigger>
-                <TabsTrigger value="sagittal">Sagittal View</TabsTrigger>
-                <TabsTrigger value="coronal">Coronal View</TabsTrigger>
-              </TabsList>
+            {/* MRI Viewer - Use real viewer if slice URLs available */}
+            {prediction?.slice_urls &&
+             (prediction.slice_urls.axial?.length > 0 ||
+              prediction.slice_urls.sagittal?.length > 0 ||
+              prediction.slice_urls.coronal?.length > 0) ? (
+              <RealMRIViewer
+                sessionId={session.session_code}
+                sliceUrls={prediction.slice_urls}
+                viewerMode="doctor"
+                prediction={prediction?.prediction}
+                confidence={prediction?.confidence_score}
+                showAnnotations={true}
+              />
+            ) : (
+              <MockMRIViewer
+                sessionId={session.session_code}
+                viewerMode="doctor"
+                prediction={prediction?.prediction}
+                confidence={prediction?.confidence_score}
+                showAnnotations={true}
+              />
+            )}
 
-              <TabsContent value="axial" className="space-y-4">
-                <MockMRIViewer
-                  sessionId={session.sessionCode}
-                  viewerMode="doctor"
-                  prediction={session.prediction || undefined}
-                  showAnnotations={true}
-                />
-              </TabsContent>
-
-              <TabsContent value="sagittal" className="space-y-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="bg-gray-900 rounded-lg flex items-center justify-center h-96">
-                      <p className="text-gray-400">Sagittal View</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="coronal" className="space-y-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="bg-gray-900 rounded-lg flex items-center justify-center h-96">
-                      <p className="text-gray-400">Coronal View</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
+            {/* Reports Section */}
+            {prediction && (prediction.clinician_pdf_url || prediction.patient_pdf_url) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Available Reports</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-4 flex-wrap">
+                    {prediction.clinician_pdf_url && (
+                      <a
+                        href={prediction.clinician_pdf_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+                      >
+                        <FileText className="h-5 w-5 text-primary" />
+                        <span>Clinician Report (PDF)</span>
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                    {prediction.patient_pdf_url && (
+                      <a
+                        href={prediction.patient_pdf_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+                      >
+                        <FileText className="h-5 w-5 text-primary" />
+                        <span>Patient Report (PDF)</span>
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+                  {prediction.report_generated_at && (
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Reports generated: {new Date(prediction.report_generated_at).toLocaleString()}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Right Sidebar */}
           <div className="space-y-6">
             {/* AI Prediction */}
-            {session.probabilities && session.prediction && (
+            {prediction?.probabilities && prediction?.prediction && (
               <PredictionCard
-                prediction={session.prediction}
-                probabilities={session.probabilities}
-                confidenceScore={session.probabilities[session.prediction]}
+                prediction={prediction.prediction}
+                probabilities={prediction.probabilities}
+                confidenceScore={prediction.confidence_score || 0}
               />
             )}
 
-            {/* Clinical Findings */}
+            {/* Clinical Recommendations */}
             <Card>
               <CardHeader>
-                <CardTitle>Clinical Findings</CardTitle>
+                <CardTitle>Clinical Recommendations</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {session.volumetrics && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">Volumetric Analysis</h4>
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Hippocampus:</span>
-                        <p className="font-medium">{session.volumetrics.hippocampus}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Ventricles:</span>
-                        <p className="font-medium">{session.volumetrics.ventricles}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Cortical Thickness:</span>
-                        <p className="font-medium">{session.volumetrics.corticalThickness}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-4 border-t">
-                  <h4 className="text-sm font-semibold mb-2">Recommendations</h4>
+                {prediction?.prediction ? (
                   <div className="space-y-2 text-sm text-muted-foreground">
-                    {session.prediction === 'AD' && (
+                    {prediction.prediction === 'AD' && (
                       <>
-                        <p>• Cognitive assessment recommended</p>
-                        <p>• Consider pharmacological intervention</p>
-                        <p>• Follow-up MRI in 6 months</p>
-                        <p>• Refer to memory clinic</p>
+                        <p>- Comprehensive cognitive assessment recommended</p>
+                        <p>- Consider pharmacological intervention (cholinesterase inhibitors)</p>
+                        <p>- Follow-up MRI in 6 months to monitor progression</p>
+                        <p>- Refer to memory clinic for specialized care</p>
+                        <p>- Discuss care planning with family</p>
                       </>
                     )}
-                    {session.prediction === 'PD' && (
+                    {prediction.prediction === 'MCI' && (
                       <>
-                        <p>• Neurological examination recommended</p>
-                        <p>• Consider DaTscan for confirmation</p>
-                        <p>• Evaluate motor symptoms</p>
-                        <p>• Refer to movement disorder specialist</p>
+                        <p>- Cognitive screening and monitoring recommended</p>
+                        <p>- Lifestyle modifications (exercise, diet, cognitive activities)</p>
+                        <p>- Monitor for progression to dementia</p>
+                        <p>- Follow-up MRI in 12 months</p>
+                        <p>- Consider neuropsychological testing</p>
                       </>
                     )}
-                    {session.prediction === 'FTD' && (
+                    {prediction.prediction === 'CN' && (
                       <>
-                        <p>• Behavioral assessment recommended</p>
-                        <p>• Genetic counseling if early onset</p>
-                        <p>• Speech and language evaluation</p>
-                        <p>• Follow-up MRI in 6 months</p>
-                      </>
-                    )}
-                    {session.prediction === 'CN' && (
-                      <>
-                        <p>• Routine follow-up as scheduled</p>
-                        <p>• Maintain healthy lifestyle</p>
-                        <p>• No immediate intervention required</p>
+                        <p>- Routine follow-up as scheduled</p>
+                        <p>- Maintain healthy lifestyle habits</p>
+                        <p>- No immediate intervention required</p>
+                        <p>- Continue age-appropriate health screenings</p>
                       </>
                     )}
                   </div>
-                </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {session.status === 'processing'
+                      ? 'Recommendations will be available after analysis completes.'
+                      : 'No analysis results available.'}
+                  </p>
+                )}
               </CardContent>
             </Card>
 
-            {/* Patient Info */}
+            {/* Session Information */}
             <Card>
               <CardHeader>
-                <CardTitle>Patient Information</CardTitle>
+                <CardTitle>Session Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Name:</span>
-                  <span className="font-medium">{session.patientName}</span>
+                  <span className="text-muted-foreground">Patient:</span>
+                  <span className="font-medium">{patientName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Patient Code:</span>
+                  <span>{session.patient?.patient_code || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Scan Date:</span>
-                  <span>{session.scanDate}</span>
+                  <span>{new Date(session.scan_date).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Status:</span>
+                  <Badge variant={session.status === 'completed' ? 'default' : 'secondary'}>
+                    {session.status}
+                  </Badge>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Radiologist:</span>
-                  <span>{session.radiologistName || 'N/A'}</span>
+                  <span>{radiologistName}</span>
                 </div>
-                {session.scannerInfo && (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Scanner:</span>
-                      <span>{session.scannerInfo.manufacturer}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sequence:</span>
-                      <span>{session.scannerInfo.sequenceType}</span>
-                    </div>
-                  </>
+                {session.scanner_manufacturer && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Scanner:</span>
+                    <span>{session.scanner_manufacturer}</span>
+                  </div>
+                )}
+                {session.sequence_type && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Sequence:</span>
+                    <span>{session.sequence_type}</span>
+                  </div>
                 )}
               </CardContent>
             </Card>
+
+            {/* Notes */}
+            {session.notes && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Notes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">{session.notes}</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

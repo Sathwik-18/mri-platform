@@ -24,7 +24,7 @@ export default function DoctorPatientDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <Navbar userName="Dr. Sarah Mitchell" userRole="doctor" />
+      <Navbar />
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

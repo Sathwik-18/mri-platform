@@ -1,175 +1,98 @@
 'use client';
 
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { BrainIcon, PatientIcon, DoctorIcon, RadiologistIcon, AdminIcon } from '@/components/icons';
-import { Navbar } from '@/components/shared/Navbar';
-import { ArrowRight, Activity, Shield, Zap } from 'lucide-react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/providers/AuthProvider';
 
-export default function Home() {
-  const roles = [
-    {
-      title: 'Patient Portal',
-      description: 'View your scan results, download reports, and track your health journey',
-      icon: PatientIcon,
-      href: '/patient/dashboard',
-      color: 'bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800',
-    },
-    {
-      title: 'Doctor Dashboard',
-      description: 'Review patient scans, manage assessments, and provide diagnoses',
-      icon: DoctorIcon,
-      href: '/doctor/dashboard',
-      color: 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 dark:bg-emerald-950 dark:hover:bg-emerald-900 dark:border-emerald-800',
-    },
-    {
-      title: 'Radiologist Workstation',
-      description: 'Upload MRI scans, process imaging data, and generate technical reports',
-      icon: RadiologistIcon,
-      href: '/radiologist/dashboard',
-      color: 'bg-purple-50 hover:bg-purple-100 border-purple-200 dark:bg-purple-950 dark:hover:bg-purple-900 dark:border-purple-800',
-    },
-    {
-      title: 'Admin Control Panel',
-      description: 'Manage users, assign patients, and oversee system operations',
-      icon: AdminIcon,
-      href: '/admin/dashboard',
-      color: 'bg-amber-50 hover:bg-amber-100 border-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 dark:border-amber-800',
-    },
-  ];
+/**
+ * Root page with smart redirects:
+ * - Not authenticated → /landing (public landing page)
+ * - Authenticated with active account → /{role}/dashboard
+ * - Authenticated but suspended → /account-suspended
+ */
+export default function RootPage() {
+  const { user, userProfile, loading } = useAuth();
+  const router = useRouter();
 
+  useEffect(() => {
+    // Wait for auth state to load
+    if (loading) return;
+
+    // Not authenticated - go to public landing page
+    if (!user) {
+      router.replace('/landing');
+      return;
+    }
+
+    // Authenticated - check account status and redirect to appropriate dashboard
+    if (userProfile) {
+      if (userProfile.account_status !== 'active') {
+        router.replace('/account-suspended');
+        return;
+      }
+
+      // Redirect to role-specific dashboard
+      if (userProfile.role) {
+        router.replace(`/${userProfile.role}/dashboard`);
+        return;
+      }
+    }
+
+    // User exists but no profile yet - might still be loading
+    // Wait a bit then redirect to landing if still no profile
+    const timeout = setTimeout(() => {
+      if (!userProfile) {
+        router.replace('/landing');
+      }
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [user, userProfile, loading, router]);
+
+  // Full-screen loading state while determining redirect
   return (
-    <>
-      <Navbar />
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950 pt-24">
-
-      {/* Hero Section */}
-      <section className="container mx-auto px-4 py-16 md:py-24">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-full mb-6">
-            <Zap className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Siddhi 4.0 Technology</span>
-          </div>
-          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 dark:from-blue-400 dark:via-purple-400 dark:to-blue-400 bg-clip-text text-transparent">
-            Advanced AI-Driven MRI Diagnostic Platform
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground mb-8">
-            Comprehensive neurodegenerative disease detection using state-of-the-art deep learning.
-            Supporting Alzheimer's, Parkinson's, and Frontotemporal Dementia diagnosis.
-          </p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <div className="flex items-center gap-2 px-4 py-2 bg-card rounded-lg shadow-sm border">
-              <Activity className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              <span className="text-sm font-medium">Multi-Disease Detection</span>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-card rounded-lg shadow-sm border">
-              <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <span className="text-sm font-medium">HIPAA Compliant</span>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-card rounded-lg shadow-sm border">
-              <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-              <span className="text-sm font-medium">Real-time Analysis</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Role Selection */}
-        <div>
-          <h2 className="text-2xl md:text-3xl font-bold text-center mb-8">
-            Select Your Role to Continue
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {roles.map((role) => {
-              const Icon = role.icon;
-              return (
-                <Link key={role.href} href={role.href}>
-                  <Card className={`h-full transition-all duration-300 hover:shadow-xl cursor-pointer border-2 ${role.color}`}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-3 bg-background rounded-lg shadow-sm border">
-                            <Icon size={32} className="text-primary" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-xl">{role.title}</CardTitle>
-                          </div>
-                        </div>
-                        <ArrowRight className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <CardDescription className="mt-2">{role.description}</CardDescription>
-                    </CardHeader>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="bg-muted/50 py-16 border-t">
-        <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold text-center mb-12">Platform Features</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <Card className="border-2">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-primary" />
-                  Multi-Disease Analysis
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Simultaneous detection of Alzheimer's Disease, Parkinson's Disease, and Frontotemporal Dementia
-                  with high accuracy and confidence scores.
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-2">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BrainIcon className="h-5 w-5 text-primary" />
-                  3D DICOM Viewer
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Advanced multi-planar reconstruction with annotation tools, measurements, and GradCAM
-                  explainability maps for transparent AI decisions.
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-2">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  Secure & Compliant
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Enterprise-grade security with role-based access control, encrypted storage, and full HIPAA
-                  compliance for patient data protection.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t bg-muted/30 py-8">
-        <div className="container mx-auto px-4 text-center text-muted-foreground">
-          <p className="text-sm">
-            © 2025 NeuroScope. Powered by Siddhi 4.0 AI Technology. All rights reserved.
-          </p>
-          <p className="text-xs mt-2">
-            For research and clinical use. Consult with healthcare professionals for medical decisions.
-          </p>
-        </div>
-      </footer>
+    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
+      {/* Background orbs */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-teal-500/15 rounded-full blur-[80px]"></div>
       </div>
-    </>
+
+      <div className="relative z-10 flex flex-col items-center gap-6">
+        {/* Brain icon with pulse animation */}
+        <div className="relative">
+          <div className="w-20 h-20 bg-gradient-to-br from-purple-500 via-violet-500 to-teal-400 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-500/30">
+            <svg
+              viewBox="0 0 24 24"
+              className="w-10 h-10 text-white"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M12 2C9.243 2 7 4.243 7 7c0 .836.194 1.625.537 2.331C5.397 10.148 4 12.233 4 14.667c0 1.545.627 2.944 1.64 3.96C4.626 19.642 4 21.026 4 22.5c0 .828.672 1.5 1.5 1.5h13c.828 0 1.5-.672 1.5-1.5 0-1.474-.627-2.858-1.64-3.873 1.013-1.016 1.64-2.415 1.64-3.96 0-2.434-1.397-4.519-3.537-5.336A4.984 4.984 0 0017 7c0-2.757-2.243-5-5-5z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          {/* Animated rings */}
+          <div className="absolute inset-0 -m-4 flex items-center justify-center">
+            <div className="w-28 h-28 rounded-2xl border-2 border-purple-500/30 animate-ping"></div>
+          </div>
+        </div>
+
+        <div className="text-center">
+          <p className="text-xl font-semibold text-white mb-2">NeuroScope</p>
+          <div className="flex items-center gap-2 text-slate-400">
+            <div className="relative w-5 h-5">
+              <div className="w-5 h-5 border-2 border-purple-500/20 rounded-full"></div>
+              <div className="absolute inset-0 w-5 h-5 border-2 border-transparent border-t-purple-500 rounded-full animate-spin"></div>
+            </div>
+            <span className="text-sm">Loading your dashboard...</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

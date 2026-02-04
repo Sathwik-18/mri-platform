@@ -34,3 +34,26 @@ Thumbs.db
 
 # Misc
 *.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Backend uploads and data files
+backend/uploads/
+*.nii
+*.nii.gz
+
+# Other
+.claude/
+*.md
+!frontend/README.md
+nul
+files/
+database/
+radiologist_screenshots/

@@ -47,7 +47,7 @@ export const Navbar = () => {
   return (
     <nav className={styles.navbar}>
       <div className={styles.navbarBrand}>
-        <Link href="/">NeuroScope</Link>
+        <Link href={user && userProfile ? "/home" : "/landing"}>NeuroScope</Link>
       </div>
 
       <button
@@ -61,6 +61,11 @@ export const Navbar = () => {
       <ul className={`${styles.navbarLinks} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         {user && userProfile ? (
           <>
+            <li>
+              <Link href="/home" onClick={closeMobileMenu}>
+                Home
+              </Link>
+            </li>
             {userProfile.role && userProfile.account_status === 'active' && (
               <li>
                 <Link href={`/${userProfile.role}/dashboard`} onClick={closeMobileMenu}>
@@ -82,7 +87,7 @@ export const Navbar = () => {
         ) : (
           <>
             <li>
-              <Link href="/" onClick={closeMobileMenu}>
+              <Link href="/landing" onClick={closeMobileMenu}>
                 Home
               </Link>
             </li>

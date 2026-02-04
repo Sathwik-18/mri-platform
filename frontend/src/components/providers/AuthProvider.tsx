@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -47,163 +47,182 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const supabase = createClient();
 
-  const fetchUserProfile = async (currentUser: User) => {
+  const supabase = useMemo(() => createClient(), []);
+
+  // Get profile from user metadata (fast, no DB call)
+  const getProfileFromMetadata = useCallback((currentUser: User): UserProfile | null => {
+    const metadata = currentUser.user_metadata;
+    if (metadata?.role) {
+      return {
+        id: currentUser.id,
+        full_name: metadata.full_name || currentUser.email?.split('@')[0] || 'User',
+        email: currentUser.email || '',
+        role: metadata.role as UserProfile['role'],
+        account_status: 'active',
+      };
+    }
+    return null;
+  }, []);
+
+  // Fetch full profile from DB (background, non-blocking)
+  const fetchFullProfile = useCallback(async (currentUser: User): Promise<UserProfile | null> => {
     try {
-      // Fetch user profile
-      const { data: profile, error: profileError } = await supabase
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const { data: profile, error } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', currentUser.id)
+        .abortSignal(controller.signal)
         .single();
 
-      if (profileError || !profile) {
-        console.error('Error fetching user profile:', profileError);
-        return;
+      clearTimeout(timeoutId);
+
+      if (error) {
+        console.log('DB profile fetch failed:', error.message);
+        return null;
       }
 
-      // Fetch role-specific profile
-      let roleProfile = null;
-      const role = profile.role;
-
-      if (role === 'patient') {
-        const { data } = await supabase
-          .from('patient_profiles')
-          .select(`
-            *,
-            blood_groups (blood_group)
-          `)
-          .eq('user_id', currentUser.id)
-          .single();
-        roleProfile = data;
-      } else if (role === 'doctor') {
-        const { data } = await supabase
-          .from('doctor_profiles')
-          .select(`
-            *,
-            qualifications (qualification_name),
-            hospitals (name, city)
-          `)
-          .eq('user_id', currentUser.id)
-          .single();
-        roleProfile = data;
-      } else if (role === 'radiologist') {
-        const { data } = await supabase
-          .from('radiologist_profiles')
-          .select(`
-            *,
-            qualifications (qualification_name),
-            hospitals (name, city)
-          `)
-          .eq('user_id', currentUser.id)
-          .single();
-        roleProfile = data;
-      } else if (role === 'admin') {
-        const { data } = await supabase
-          .from('admin_profiles')
-          .select(`
-            *,
-            hospitals (name, city)
-          `)
-          .eq('user_id', currentUser.id)
-          .single();
-        roleProfile = data;
+      if (profile) {
+        console.log('DB profile loaded:', profile.role);
+        return { ...profile, roleProfile: null };
       }
 
-      setUserProfile({ ...profile, roleProfile });
-    } catch (error) {
-      console.error('Error in fetchUserProfile:', error);
+      return null;
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Profile fetch timed out');
+      } else {
+        console.log('Profile fetch error:', e.message);
+      }
+      return null;
     }
-  };
+  }, [supabase]);
 
-  const refreshProfile = async () => {
+  // Refresh profile
+  const refreshProfile = useCallback(async () => {
     if (user) {
-      await fetchUserProfile(user);
+      const profile = await fetchFullProfile(user);
+      if (profile) {
+        setUserProfile(profile);
+      }
     }
-  };
+  }, [user, fetchFullProfile]);
 
+  // Initialize auth
   useEffect(() => {
-    const initializeAuth = async () => {
+    let mounted = true;
+
+    const initAuth = async () => {
       try {
-        // Set timeout to prevent hanging
-        const timeoutId = setTimeout(() => {
-          console.warn('Auth initialization timeout - setting loading to false');
+        console.log('Auth init...');
+
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (error) {
+          console.error('Session error:', error.message);
           setLoading(false);
-        }, 5000); // 5 second timeout
-
-        const {
-          data: { session: currentSession },
-        } = await supabase.auth.getSession();
-
-        clearTimeout(timeoutId);
-
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-
-        if (currentSession?.user) {
-          await fetchUserProfile(currentSession.user);
+          return;
         }
 
-        setLoading(false);
+        if (currentSession?.user) {
+          console.log('Session found for:', currentSession.user.email);
+          setSession(currentSession);
+          setUser(currentSession.user);
+
+          // FAST: Get profile from metadata immediately
+          const metadataProfile = getProfileFromMetadata(currentSession.user);
+          if (metadataProfile) {
+            console.log('Using metadata profile:', metadataProfile.role);
+            setUserProfile(metadataProfile);
+            setLoading(false);
+
+            // BACKGROUND: Try to get full profile from DB
+            fetchFullProfile(currentSession.user).then(dbProfile => {
+              if (mounted && dbProfile) {
+                setUserProfile(dbProfile);
+              }
+            });
+          } else {
+            // Fallback: Try DB query if no metadata
+            console.log('No metadata, trying DB...');
+            const dbProfile = await fetchFullProfile(currentSession.user);
+            if (mounted) {
+              setUserProfile(dbProfile);
+              setLoading(false);
+            }
+          }
+        } else {
+          console.log('No session');
+          setLoading(false);
+        }
       } catch (error) {
-        console.error('Error initializing auth:', error);
-        setLoading(false);
+        console.error('Auth error:', error);
+        if (mounted) setLoading(false);
       }
     };
 
-    initializeAuth();
+    // Safety timeout
+    const safetyTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.log('Safety timeout - forcing load complete');
+        setLoading(false);
+      }
+    }, 4000);
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
+    initAuth();
 
-      if (currentSession?.user) {
-        await fetchUserProfile(currentSession.user);
-      } else {
+    // Auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      if (!mounted) return;
+      console.log('Auth event:', event);
+
+      if (event === 'SIGNED_IN' && currentSession?.user) {
+        setSession(currentSession);
+        setUser(currentSession.user);
+
+        const metadataProfile = getProfileFromMetadata(currentSession.user);
+        if (metadataProfile) {
+          setUserProfile(metadataProfile);
+        }
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
         setUserProfile(null);
+        setLoading(false);
+      } else if (event === 'TOKEN_REFRESHED' && currentSession) {
+        setSession(currentSession);
       }
     });
 
     return () => {
+      mounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase, getProfileFromMetadata, fetchFullProfile]);
 
-  const signOut = async () => {
+  // Sign out
+  const signOut = useCallback(async () => {
+    setUser(null);
+    setUserProfile(null);
+    setSession(null);
     try {
-      // Sign out from Supabase
       await supabase.auth.signOut();
-
-      // Clear all state
-      setUser(null);
-      setUserProfile(null);
-      setSession(null);
-
-      // Force redirect to login
-      window.location.href = '/login';
-    } catch (error) {
-      console.error('Error during sign out:', error);
-      // Force redirect anyway
-      window.location.href = '/login';
+    } catch (e) {
+      console.log('Signout error:', e);
     }
-  };
-
-  // Don't block rendering with loading screen - let pages handle their own loading states
+    window.location.href = '/login';
+  }, [supabase]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        userProfile,
-        session,
-        loading,
-        signOut,
-        refreshProfile,
-      }}
-    >
+    <AuthContext.Provider value={{ user, userProfile, session, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

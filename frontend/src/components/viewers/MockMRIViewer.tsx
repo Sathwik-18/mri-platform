@@ -8,11 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   ZoomIn,
   ZoomOut,
-  RotateCw,
-  Move,
-  Ruler,
-  Square,
-  Circle,
   ChevronLeft,
   ChevronRight,
   Play,
@@ -22,7 +17,8 @@ import {
 interface MockMRIViewerProps {
   sessionId: string;
   viewerMode: 'patient' | 'doctor' | 'radiologist';
-  prediction?: 'CN' | 'AD' | 'PD' | 'FTD';
+  prediction?: 'CN' | 'MCI' | 'AD';
+  confidence?: number;
   showAnnotations?: boolean;
 }
 
@@ -30,6 +26,7 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
   sessionId,
   viewerMode,
   prediction,
+  confidence,
   showAnnotations = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,7 +34,6 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
   const [zoom, setZoom] = useState(1);
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
-  const [activeTool, setActiveTool] = useState<string>('none');
   const [isPlaying, setIsPlaying] = useState(false);
   const totalSlices = 120;
 
@@ -123,27 +119,33 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
 
     // Highlight regions based on prediction
     if (showAnnotations && prediction && prediction !== 'CN') {
-      ctx.strokeStyle = prediction === 'AD' ? '#ef4444' : prediction === 'PD' ? '#f59e0b' : '#8b5cf6';
-      ctx.lineWidth = 3;
+      // AD = red, MCI = yellow/amber
+      ctx.strokeStyle = prediction === 'AD' ? '#ef4444' : '#f59e0b';
+      ctx.lineWidth = prediction === 'AD' ? 3 : 2;
       ctx.setLineDash([5, 5]);
 
       if (prediction === 'AD') {
-        // Highlight hippocampus region
+        // Highlight hippocampus region (bilateral) - more pronounced
         ctx.beginPath();
         ctx.arc(-size / 6, size / 6, size / 10, 0, Math.PI * 2);
         ctx.stroke();
         ctx.beginPath();
         ctx.arc(size / 6, size / 6, size / 10, 0, Math.PI * 2);
         ctx.stroke();
-      } else if (prediction === 'PD') {
-        // Highlight substantia nigra
+        // Also highlight temporal regions
         ctx.beginPath();
-        ctx.arc(0, size / 8, size / 12, 0, Math.PI * 2);
+        ctx.arc(-size / 4, size / 8, size / 12, 0, Math.PI * 2);
         ctx.stroke();
-      } else if (prediction === 'FTD') {
-        // Highlight frontal lobe
         ctx.beginPath();
-        ctx.arc(0, -size / 3, size / 6, 0, Math.PI * 2);
+        ctx.arc(size / 4, size / 8, size / 12, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (prediction === 'MCI') {
+        // Highlight hippocampus region - milder indication
+        ctx.beginPath();
+        ctx.arc(-size / 6, size / 6, size / 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(size / 6, size / 6, size / 10, 0, Math.PI * 2);
         ctx.stroke();
       }
 
@@ -159,32 +161,26 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
     ctx.fillText(`Zoom: ${(zoom * 100).toFixed(0)}%`, 10, 45);
 
     if (prediction) {
-      const predictionColor = {
-        CN: '#10b981',
-        AD: '#ef4444',
-        PD: '#f59e0b',
-        FTD: '#8b5cf6',
-      }[prediction];
-      ctx.fillStyle = predictionColor;
+      const predictionColors: Record<string, string> = {
+        CN: '#10b981',  // Green - Cognitively Normal
+        MCI: '#f59e0b', // Amber - Mild Cognitive Impairment
+        AD: '#ef4444',  // Red - Alzheimer's Disease
+      };
+      ctx.fillStyle = predictionColors[prediction] || '#ffffff';
       ctx.fillText(`Prediction: ${prediction}`, 10, 65);
     }
   };
 
+  // Only include functional tools - zoom in/out work, others are placeholders
   const tools = {
     patient: [],
     doctor: [
       { icon: ZoomIn, label: 'Zoom In', action: () => setZoom((z) => Math.min(z + 0.2, 3)) },
       { icon: ZoomOut, label: 'Zoom Out', action: () => setZoom((z) => Math.max(z - 0.2, 0.5)) },
-      { icon: Move, label: 'Pan', action: () => setActiveTool('pan') },
     ],
     radiologist: [
       { icon: ZoomIn, label: 'Zoom In', action: () => setZoom((z) => Math.min(z + 0.2, 3)) },
       { icon: ZoomOut, label: 'Zoom Out', action: () => setZoom((z) => Math.max(z - 0.2, 0.5)) },
-      { icon: Move, label: 'Pan', action: () => setActiveTool('pan') },
-      { icon: RotateCw, label: 'Rotate', action: () => setActiveTool('rotate') },
-      { icon: Ruler, label: 'Measure', action: () => setActiveTool('measure') },
-      { icon: Square, label: 'ROI', action: () => setActiveTool('roi') },
-      { icon: Circle, label: 'Ellipse', action: () => setActiveTool('ellipse') },
     ],
   };
 
@@ -200,23 +196,13 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
                 <Button
                   key={idx}
                   size="sm"
-                  variant={activeTool === tool.label.toLowerCase() ? 'default' : 'outline'}
+                  variant="outline"
                   onClick={tool.action}
                 >
                   <tool.icon className="h-4 w-4 mr-1" />
                   {tool.label}
                 </Button>
               ))}
-
-              {viewerMode === 'radiologist' && (
-                <>
-                  <div className="h-6 w-px bg-border mx-2" />
-                  <span className="text-sm font-medium">Window/Level:</span>
-                  <Button size="sm" variant="outline">Brain</Button>
-                  <Button size="sm" variant="outline">Bone</Button>
-                  <Button size="sm" variant="outline">Soft Tissue</Button>
-                </>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -241,12 +227,10 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
                     className={`text-lg ${
                       prediction === 'AD'
                         ? 'bg-red-500'
-                        : prediction === 'PD'
-                        ? 'bg-orange-500'
-                        : 'bg-purple-500'
+                        : 'bg-yellow-500'
                     }`}
                   >
-                    {prediction} Detected
+                    {prediction === 'AD' ? "Alzheimer's Disease" : 'Mild Cognitive Impairment'}
                   </Badge>
                 </div>
               )}
@@ -352,18 +336,32 @@ export const MockMRIViewer: React.FC<MockMRIViewerProps> = ({
                     <div className="mt-1">
                       <Badge
                         variant={prediction === 'CN' ? 'default' : 'destructive'}
+                        className={
+                          prediction === 'CN'
+                            ? 'bg-green-100 text-green-800'
+                            : prediction === 'MCI'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }
                       >
-                        {prediction}
+                        {prediction === 'CN' && 'Cognitively Normal'}
+                        {prediction === 'MCI' && 'Mild Cognitive Impairment'}
+                        {prediction === 'AD' && "Alzheimer's Disease"}
                       </Badge>
                     </div>
                   </div>
+                  {confidence !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Confidence:</span>
+                      <span className="font-medium">{(confidence * 100).toFixed(1)}%</span>
+                    </div>
+                  )}
                   {prediction !== 'CN' && (
                     <div className="mt-2 p-2 bg-muted rounded text-xs">
                       <p className="font-medium">Highlighted Regions:</p>
                       <p className="text-muted-foreground mt-1">
-                        {prediction === 'AD' && 'Hippocampus (medial temporal lobe)'}
-                        {prediction === 'PD' && 'Substantia nigra (midbrain)'}
-                        {prediction === 'FTD' && 'Frontal lobe'}
+                        {prediction === 'AD' && 'Hippocampus, temporal lobes (medial temporal region)'}
+                        {prediction === 'MCI' && 'Hippocampus (early changes detected)'}
                       </p>
                     </div>
                   )}

@@ -17,18 +17,12 @@ export interface MRISession {
   radiologistName?: string;
   scanDate: string;
   status: 'completed' | 'processing' | 'pending' | 'failed';
-  prediction: 'CN' | 'AD' | 'PD' | 'FTD' | null;
+  prediction: 'CN' | 'MCI' | 'AD' | null;
   probabilities: {
     CN: number;
+    MCI: number;
     AD: number;
-    PD: number;
-    FTD: number;
   } | null;
-  volumetrics?: {
-    hippocampus: string;
-    ventricles: string;
-    corticalThickness: string;
-  };
   scannerInfo?: {
     manufacturer: string;
     model: string;
@@ -52,7 +46,7 @@ export interface Patient {
   bloodGroup: string;
   lastScan?: string;
   totalScans: number;
-  latestPrediction?: 'CN' | 'AD' | 'PD' | 'FTD';
+  latestPrediction?: 'CN' | 'MCI' | 'AD';
 }
 
 export interface Doctor {
@@ -108,14 +102,8 @@ export const mockMRISessions: MRISession[] = [
     prediction: 'AD',
     probabilities: {
       CN: 0.10,
+      MCI: 0.25,
       AD: 0.65,
-      PD: 0.15,
-      FTD: 0.10,
-    },
-    volumetrics: {
-      hippocampus: '3.2 cm³ (↓15% from normal)',
-      ventricles: 'Enlarged (↑12%)',
-      corticalThickness: '2.1mm (reduced)',
     },
     scannerInfo: {
       manufacturer: 'Siemens',
@@ -124,9 +112,9 @@ export const mockMRISessions: MRISession[] = [
       sequenceType: 'T1-weighted MPRAGE',
     },
     reports: {
-      patient: '/reports/patient-001.pdf',
-      clinician: '/reports/clinician-001.pdf',
-      technical: '/reports/technical-001.pdf',
+      patient: '/reports/patient-report.html',
+      clinician: '/reports/clinician-report.html',
+      technical: '/reports/technical-report.html',
     },
   },
   {
@@ -143,20 +131,19 @@ export const mockMRISessions: MRISession[] = [
     prediction: 'CN',
     probabilities: {
       CN: 0.85,
+      MCI: 0.10,
       AD: 0.05,
-      PD: 0.05,
-      FTD: 0.05,
-    },
-    volumetrics: {
-      hippocampus: '4.8 cm³ (normal range)',
-      ventricles: 'Normal size',
-      corticalThickness: '2.5mm (normal)',
     },
     scannerInfo: {
       manufacturer: 'GE Healthcare',
       model: 'SIGNA Premier',
       fieldStrength: '3T',
       sequenceType: 'T1-weighted',
+    },
+    reports: {
+      patient: '/reports/patient-report.html',
+      clinician: '/reports/clinician-report.html',
+      technical: '/reports/technical-report.html',
     },
   },
   {
@@ -170,23 +157,22 @@ export const mockMRISessions: MRISession[] = [
     radiologistName: 'Dr. David Chen',
     scanDate: '2025-12-10',
     status: 'completed',
-    prediction: 'PD',
+    prediction: 'MCI',
     probabilities: {
-      CN: 0.10,
+      CN: 0.25,
+      MCI: 0.60,
       AD: 0.15,
-      PD: 0.60,
-      FTD: 0.15,
-    },
-    volumetrics: {
-      hippocampus: '4.2 cm³ (normal)',
-      ventricles: 'Slightly enlarged',
-      corticalThickness: '2.3mm',
     },
     scannerInfo: {
       manufacturer: 'Philips',
       model: 'Ingenia Elition X',
       fieldStrength: '3T',
       sequenceType: 'T2-weighted',
+    },
+    reports: {
+      patient: '/reports/patient-report.html',
+      clinician: '/reports/clinician-report.html',
+      technical: '/reports/technical-report.html',
     },
   },
   {
@@ -239,7 +225,7 @@ export const mockPatients: Patient[] = [
     bloodGroup: 'B+',
     lastScan: '2025-12-10',
     totalScans: 4,
-    latestPrediction: 'PD',
+    latestPrediction: 'MCI',
   },
   {
     id: 'patient-4',
@@ -292,9 +278,8 @@ export const mockPatientStats = {
   lastWeekScans: 2,
   resultDistribution: {
     CN: 0,
+    MCI: 1,
     AD: 2,
-    PD: 0,
-    FTD: 0,
   },
 };
 
@@ -305,9 +290,8 @@ export const mockDoctorStats = {
   thisMonthScans: 8,
   resultDistribution: {
     CN: 8,
+    MCI: 6,
     AD: 10,
-    PD: 4,
-    FTD: 2,
   },
 };
 
