@@ -119,7 +119,7 @@ def run_model(scan_path: str, analysis_type: str = 'multi-disease') -> Dict[str,
             from ml_runner_mock import _run_model_mock
             return _run_model_mock(scan_path, analysis_type)
         except Exception:
-            return _error_response(f"Model inference failed: {str(e)}")
+            return _error_response(f"Model failed: {str(e)}")
 
     # --- Formatting Response ---
     classes = ANALYSIS_TYPES.get(analysis_type, ['CN', 'MCI', 'AD'])
