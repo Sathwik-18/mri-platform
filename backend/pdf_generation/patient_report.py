@@ -21,7 +21,7 @@ class PatientPDFReport(BaseMRIReport):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.report_title = "MRI Brain Scan Analysis - Patient Report"
-        self.primary_color = (74, 144, 226)
+        self.primary_color = (41, 128, 185)
         self.secondary_color = (52, 152, 219)
 
 

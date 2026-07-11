@@ -332,16 +332,12 @@ class BaseMRIReport(FPDF):
             patient_code = patient_profile.get('patient_code', 'N/A') if patient_profile else 'N/A'
             self.key_value_pair("Patient ID", patient_code, 45)
 
-            # Full Name
-            self.key_value_pair("Full Name", patient.get('full_name', 'N/A'), 45)
-
-            # DOB and Age
+            # Age only — no name or DOB for privacy
             dob = patient_profile.get('date_of_birth') if patient_profile else None
             if dob:
                 age = calculate_age(dob)
-                dob_formatted = format_date(dob, 'date_only')
                 age_str = f"{age} years" if age else "N/A"
-                self.key_value_pair("Date of Birth", f"{dob_formatted} (Age: {age_str})", 45)
+                self.key_value_pair("Age", age_str, 45)
 
             # Gender
             gender = patient_profile.get('gender') if patient_profile else None
@@ -352,19 +348,6 @@ class BaseMRIReport(FPDF):
             blood_group = self.comprehensive_data.get('blood_group')
             if blood_group:
                 self.key_value_pair("Blood Group", blood_group, 45)
-
-            # Contact
-            phone = patient.get('phone')
-            if phone:
-                self.key_value_pair("Phone", phone, 45)
-
-            # Emergency Contact
-            if patient_profile:
-                ec_name = patient_profile.get('emergency_contact_name')
-                ec_phone = patient_profile.get('emergency_contact_phone')
-                if ec_name or ec_phone:
-                    ec_info = f"{ec_name or 'N/A'}, {ec_phone or 'N/A'}"
-                    self.key_value_pair("Emergency Contact", ec_info, 45)
 
             self.ln(3)
         except Exception as e:
@@ -399,14 +382,13 @@ class BaseMRIReport(FPDF):
 
             self.section_title(title)
 
-            # Name
-            self.key_value_pair("Name", user_data.get('full_name', 'N/A'), 45)
-
-            # License
+            # Staff ID — use license number as the anonymous professional identifier;
+            # fall back to first 8 chars of the profile UUID if no license is set
             if profile_data:
                 license_num = profile_data.get('license_number')
-                if license_num:
-                    self.key_value_pair("License Number", license_num, 45)
+                profile_uuid = profile_data.get('id', '')
+                staff_id = license_num if license_num else (profile_uuid[:8].upper() if profile_uuid else 'N/A')
+                self.key_value_pair("Staff ID", staff_id, 45)
 
                 # Qualification
                 if qualification:
@@ -418,10 +400,7 @@ class BaseMRIReport(FPDF):
                 if spec:
                     self.key_value_pair("Specialization", spec, 45)
 
-            # Contact
-            phone = user_data.get('phone')
-            if phone:
-                self.key_value_pair("Phone", phone, 45)
+            # Name and phone removed for privacy
 
             self.ln(3)
         except Exception as e:
@@ -742,7 +721,7 @@ class BaseMRIReport(FPDF):
     def add_signature_section(self):
         """Add signature section."""
         try:
-            if self.get_y() > self.h - 50:
+            if self.get_y() > self.h - 35:
                 self.add_page()
 
             self.ln(10)
@@ -758,9 +737,15 @@ class BaseMRIReport(FPDF):
                 self.line(self.l_margin + 10, sig_y, self.l_margin + 90, sig_y)
                 self.ln(2)
 
+                # Use license number as anonymous identifier; fall back to UUID prefix
+                rad_profile = self.comprehensive_data.get('radiologist_profile', {}) if self.comprehensive_data else {}
+                rad_license = rad_profile.get('license_number') if rad_profile else None
+                rad_uuid = rad_profile.get('id', '') if rad_profile else ''
+                sig_id = rad_license if rad_license else (rad_uuid[:8].upper() if rad_uuid else 'Authorized Personnel')
+
                 self.set_x(self.l_margin + 10)
                 self.set_font('Helvetica', 'B', 9)
-                self.cell(80, 5, sanitize_for_pdf(radiologist.get('full_name', 'Authorized Personnel')), 0, 1, 'L')
+                self.cell(80, 5, sanitize_for_pdf(sig_id), 0, 1, 'L')
 
                 self.set_x(self.l_margin + 10)
                 self.set_font('Helvetica', '', 8)

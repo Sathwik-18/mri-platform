@@ -21,7 +21,7 @@ class TechnicalPDFReport(BaseMRIReport):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.report_title = "Technical MRI Analysis Report"
-        self.primary_color = (40, 60, 80)
+        self.primary_color = (41, 128, 185)
         self.secondary_color = (52, 152, 219)
 
 
@@ -250,7 +250,8 @@ def build_technical_report(
         # =====================================================================
         # Technical Methodology
         # =====================================================================
-        if pdf.get_y() > pdf.h - 70:
+        # Need ~160mm for both methodology + guidelines + disclaimer + signature
+        if pdf.get_y() > pdf.h - 160:
             pdf.add_page()
 
         pdf.section_title("Methodology & Technical Specifications")
@@ -270,7 +271,8 @@ def build_technical_report(
         # =====================================================================
         # Clinical Interpretation Guidelines
         # =====================================================================
-        if pdf.get_y() > pdf.h - 70:
+        # Need ~115mm for guidelines + disclaimer + signature
+        if pdf.get_y() > pdf.h - 115:
             pdf.add_page()
 
         guidelines = [

@@ -12,7 +12,7 @@ interface WithAuthOptions {
   redirectTo?: string;
 }
 
-const AUTH_TIMEOUT = 3000; // 3 seconds - faster timeout
+const AUTH_TIMEOUT = 8000; // 8 seconds - allow time for DB profile fetch
 
 /**
  * Higher-order component for protecting routes based on authentication and role.
@@ -33,7 +33,7 @@ export function withAuth<P extends object>(
     useEffect(() => {
       if (loading) {
         const timeout = setTimeout(() => {
-          console.log('withAuth: Auth loading timed out after 3s');
+          console.log('withAuth: Auth loading timed out after 8s');
           setTimedOut(true);
         }, AUTH_TIMEOUT);
         return () => clearTimeout(timeout);
@@ -47,19 +47,29 @@ export function withAuth<P extends object>(
       // Already redirecting - don't do anything
       if (redirecting) return;
 
-      // Timed out or no user - redirect to login
-      if (timedOut || !user) {
-        console.log('withAuth: No user or timed out, redirecting to login');
+      // No user at all (and either loading finished or timed out) - redirect to login
+      if (!user) {
+        console.log('withAuth: No user, redirecting to login');
         setRedirecting(true);
         window.location.href = redirectTo || '/login';
         return;
       }
 
-      // User exists but no profile
+      // User exists but no profile yet - if timed out, try metadata fallback
       if (!userProfile) {
-        console.log('withAuth: User exists but no profile, redirecting to login');
-        setRedirecting(true);
-        window.location.href = '/login';
+        if (timedOut) {
+          // Try to build profile from user metadata as last resort
+          const role = user.user_metadata?.role;
+          if (role) {
+            console.log('withAuth: Timed out, using metadata fallback for role:', role);
+            // Don't redirect - let AuthProvider catch up
+            return;
+          }
+          console.log('withAuth: Timed out, no user metadata, redirecting to login');
+          setRedirecting(true);
+          window.location.href = '/login';
+        }
+        // Not timed out yet, just wait
         return;
       }
 
@@ -88,7 +98,26 @@ export function withAuth<P extends object>(
     }
 
     // Show redirecting state
-    if (redirecting || !user || !userProfile) {
+    if (redirecting || !user) {
+      return <LoadingScreen message="Redirecting" submessage="Taking you to the right place..." />;
+    }
+
+    // Still waiting for profile (not timed out yet)
+    if (!userProfile && !timedOut) {
+      return <LoadingScreen message="Loading profile" submessage="Almost there..." />;
+    }
+
+    // Timed out but user has metadata role - let them through while AuthProvider catches up
+    if (!userProfile && timedOut && user.user_metadata?.role) {
+      const metaRole = user.user_metadata.role as UserRole;
+      if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(metaRole)) {
+        return <LoadingScreen message="Redirecting" />;
+      }
+      return <WrappedComponent {...props} />;
+    }
+
+    // No profile and no metadata - shouldn't happen, but handle it
+    if (!userProfile) {
       return <LoadingScreen message="Redirecting" submessage="Taking you to the right place..." />;
     }
 

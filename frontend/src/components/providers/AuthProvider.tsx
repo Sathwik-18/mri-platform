@@ -88,7 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (profile) {
         console.log('DB profile loaded:', profile.role);
-        return { ...profile, roleProfile: null };
+        return {
+          ...profile,
+          account_status: profile.account_status || 'active',
+          roleProfile: null,
+        };
       }
 
       return null;
@@ -177,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Safety timeout - forcing load complete');
         setLoading(false);
       }
-    }, 4000);
+    }, 10000);
 
     initAuth();
 

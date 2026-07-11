@@ -67,3 +67,5 @@ export * from './doctors';
 export * from './sessions';
 export * from './stats';
 export * from './users';
+export * from './appointments';
+export * from './notifications';

@@ -11,6 +11,8 @@ import { doctorsApi, type Doctor, type DoctorWithPatients } from '@/lib/api/doct
 import { sessionsApi, type MRISession } from '@/lib/api/sessions';
 import { statsApi, type PatientStats, type DoctorStats, type RadiologistStats, type AdminStats } from '@/lib/api/stats';
 import { usersApi, type User } from '@/lib/api/users';
+import { appointmentsApi, type Appointment } from '@/lib/api/appointments';
+import { notificationsApi, type Notification } from '@/lib/api/notifications';
 
 // Simple in-memory cache
 const cache = new Map<string, { data: any; timestamp: number }>();
@@ -457,6 +459,115 @@ export function useUpdateUserStatus() {
   };
 
   return { suspendUser, activateUser, isLoading, error };
+}
+
+// ============================================================================
+// APPOINTMENT HOOKS
+// ============================================================================
+
+export function useMyAppointments() {
+  return useApiCall<Appointment[]>(
+    () => appointmentsApi.getMyAppointments(),
+    'my-appointments'
+  );
+}
+
+export function useCreateAppointment() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const createAppointment = async (input: Parameters<typeof appointmentsApi.createAppointment>[0]) => {
+    setIsLoading(true);
+    setError(null);
+
+    const result = await appointmentsApi.createAppointment(input);
+
+    setIsLoading(false);
+    if (result.error) {
+      setError(result.error);
+      return null;
+    }
+
+    cache.delete('my-appointments');
+    invalidateCache('notifications');
+
+    return result.data;
+  };
+
+  return { createAppointment, isLoading, error };
+}
+
+export function useUpdateAppointment() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateAppointment = async (id: string, updates: { status?: 'pending' | 'accepted' | 'rejected' | 'completed' | 'cancelled'; notes?: string }) => {
+    setIsLoading(true);
+    setError(null);
+
+    const result = await appointmentsApi.updateAppointment(id, updates);
+
+    setIsLoading(false);
+    if (result.error) {
+      setError(result.error);
+      return null;
+    }
+
+    cache.delete('my-appointments');
+    invalidateCache('notifications');
+
+    return result.data;
+  };
+
+  return { updateAppointment, isLoading, error };
+}
+
+// ============================================================================
+// NOTIFICATION HOOKS
+// ============================================================================
+
+export function useNotifications(limit = 20) {
+  return useApiCall<Notification[]>(
+    () => notificationsApi.getNotifications(limit),
+    `notifications-${limit}`
+  );
+}
+
+export function useUnreadNotificationCount() {
+  return useApiCall<number>(
+    () => notificationsApi.getUnreadCount(),
+    'unread-notification-count'
+  );
+}
+
+export function useMarkNotificationRead() {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const markAsRead = async (id: string) => {
+    setIsLoading(true);
+    await notificationsApi.markAsRead(id);
+    setIsLoading(false);
+
+    invalidateCache('notifications');
+    invalidateCache('unread-notification-count');
+  };
+
+  return { markAsRead, isLoading };
+}
+
+export function useMarkAllNotificationsRead() {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const markAllAsRead = async () => {
+    setIsLoading(true);
+    await notificationsApi.markAllAsRead();
+    setIsLoading(false);
+
+    invalidateCache('notifications');
+    invalidateCache('unread-notification-count');
+  };
+
+  return { markAllAsRead, isLoading };
 }
 
 // ============================================================================

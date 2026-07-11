@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useDoctorStats, useMySessions, useCurrentDoctor } from '@/lib/hooks/useApi';
+import { useDoctorStats, useMySessions, useCurrentDoctor, useMyAppointments, useUpdateAppointment } from '@/lib/hooks/useApi';
 import { ReportViewer } from '@/components/shared/ReportViewer';
 import type { MRISession } from '@/lib/api/sessions';
 import {
@@ -556,15 +556,44 @@ export const DoctorDashboard: React.FC = () => {
 
   // Modal state
   const [selectedSession, setSelectedSession] = useState<MRISession | null>(null);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
 
   // Data
   const { data: stats, isLoading: statsLoading, error: statsError } = useDoctorStats();
   const { data: sessionsData, isLoading: sessionsLoading } = useMySessions();
   const { data: doctorProfile } = useCurrentDoctor();
+  const { data: appointments, refetch: refetchAppointments } = useMyAppointments();
+  const { updateAppointment, isLoading: updatingAppt } = useUpdateAppointment();
 
   const sessions = sessionsData?.data || [];
   const doctorName = doctorProfile?.user_profile?.full_name || 'Doctor';
   const specialization = doctorProfile?.specialization || 'General';
+
+  // Appointment helpers
+  const pendingAppointments = useMemo(() => {
+    if (!appointments) return [];
+    return appointments.filter((a) => a.status === 'pending');
+  }, [appointments]);
+
+  const upcomingAppointments = useMemo(() => {
+    if (!appointments) return [];
+    return appointments
+      .filter((a) => a.status === 'accepted' && new Date(a.appointment_date) >= new Date())
+      .sort((a, b) => new Date(a.appointment_date).getTime() - new Date(b.appointment_date).getTime());
+  }, [appointments]);
+
+  const pastAppointments = useMemo(() => {
+    if (!appointments) return [];
+    return appointments
+      .filter((a) => ['completed', 'rejected', 'cancelled'].includes(a.status))
+      .sort((a, b) => new Date(b.appointment_date).getTime() - new Date(a.appointment_date).getTime())
+      .slice(0, 5);
+  }, [appointments]);
+
+  const handleAppointmentAction = async (id: string, action: 'accepted' | 'rejected' | 'completed' | 'cancelled') => {
+    await updateAppointment(id, { status: action });
+    refetchAppointments();
+  };
 
   // Scan dates for calendar
   const scanDates = useMemo(() => {
@@ -977,6 +1006,128 @@ export const DoctorDashboard: React.FC = () => {
                 <Link href="/doctor/dashboard" className="block mt-2 text-xs text-purple-400 hover:text-purple-300 text-center transition-colors">
                   View all patients
                 </Link>
+              )}
+            </SpotlightCard>
+
+            {/* Appointments */}
+            <SpotlightCard className="p-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+                <CalendarDays className="h-4 w-4 text-purple-400" />
+                Appointments
+              </h3>
+
+              {/* Pending Requests */}
+              {pendingAppointments.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-[10px] font-semibold text-orange-400 uppercase tracking-wider mb-1.5">
+                    Pending Requests ({pendingAppointments.length})
+                  </p>
+                  <div className="space-y-2">
+                    {pendingAppointments.slice(0, 4).map((appt) => (
+                      <div key={appt.id} className="p-2.5 rounded-lg bg-orange-500/5 border border-orange-500/20">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-foreground truncate">{appt.patient_name || 'Patient'}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-orange-500/10 text-orange-400">
+                            pending
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5 capitalize">
+                          {appt.appointment_type.replace('_', ' ')}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mb-1.5">
+                          {new Date(appt.appointment_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {' '}at{' '}
+                          {new Date(appt.appointment_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {appt.notes && (
+                          <p className="text-[10px] text-muted-foreground italic mb-1.5">&quot;{appt.notes}&quot;</p>
+                        )}
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleAppointmentAction(appt.id, 'accepted')}
+                            disabled={updatingAppt}
+                            className="flex-1 text-[10px] py-1 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors font-medium"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handleAppointmentAction(appt.id, 'rejected')}
+                            disabled={updatingAppt}
+                            className="flex-1 text-[10px] py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors font-medium"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Upcoming (Accepted) */}
+              {upcomingAppointments.length > 0 ? (
+                <div className="mb-3">
+                  <p className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1.5">
+                    Upcoming ({upcomingAppointments.length})
+                  </p>
+                  <div className="space-y-2">
+                    {upcomingAppointments.slice(0, 3).map((appt) => (
+                      <div key={appt.id} className="p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-foreground truncate">{appt.patient_name || 'Patient'}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-500/10 text-green-400">
+                            accepted
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mb-1.5">
+                          {new Date(appt.appointment_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {' '}at{' '}
+                          {new Date(appt.appointment_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleAppointmentAction(appt.id, 'completed')}
+                            disabled={updatingAppt}
+                            className="flex-1 text-[10px] py-1 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                          >
+                            Complete
+                          </button>
+                          <button
+                            onClick={() => handleAppointmentAction(appt.id, 'cancelled')}
+                            disabled={updatingAppt}
+                            className="flex-1 text-[10px] py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : pendingAppointments.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">No appointments</p>
+              ) : null}
+
+              {/* Past */}
+              {pastAppointments.length > 0 && (
+                <div className="pt-2 border-t border-white/[0.05]">
+                  <p className="text-[10px] text-muted-foreground mb-1.5">Recent</p>
+                  {pastAppointments.slice(0, 3).map((appt) => (
+                    <div key={appt.id} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] text-foreground truncate">{appt.patient_name || 'Patient'}</p>
+                        <p className="text-[9px] text-muted-foreground">{new Date(appt.appointment_date).toLocaleDateString()}</p>
+                      </div>
+                      <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                        appt.status === 'completed' ? 'bg-green-500/10 text-green-400'
+                          : appt.status === 'rejected' ? 'bg-orange-500/10 text-orange-400'
+                          : 'bg-red-500/10 text-red-400'
+                      }`}>
+                        {appt.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
             </SpotlightCard>
 

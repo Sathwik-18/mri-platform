@@ -4,11 +4,12 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ReportViewer } from '@/components/shared/ReportViewer';
-import { usePatientStats, useMySessions, useCurrentPatient } from '@/lib/hooks/useApi';
+import { usePatientStats, useMySessions, useCurrentPatient, useMyAppointments, useCreateAppointment } from '@/lib/hooks/useApi';
 import { useAuth } from '@/components/providers/AuthProvider';
 import {
   Eye,
   Calendar,
+  CalendarDays,
   Activity,
   Download,
   Brain,
@@ -581,6 +582,13 @@ export const PatientDashboard: React.FC = () => {
 
   // Modal state
   const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [showBookDialog, setShowBookDialog] = useState(false);
+  const [bookForm, setBookForm] = useState({
+    appointment_date: '',
+    appointment_time: '',
+    appointment_type: 'consultation' as 'consultation' | 'follow_up' | 'scan_review',
+    notes: '',
+  });
 
   // Auth
   const { userProfile } = useAuth();
@@ -589,8 +597,44 @@ export const PatientDashboard: React.FC = () => {
   const { data: stats, isLoading: statsLoading } = usePatientStats();
   const { data: sessionsData, isLoading: sessionsLoading } = useMySessions();
   const { data: patientProfile } = useCurrentPatient();
+  const { data: appointments, refetch: refetchAppointments } = useMyAppointments();
+  const { createAppointment, isLoading: bookingAppt } = useCreateAppointment();
 
   const allSessions = sessionsData?.data || [];
+
+  // Appointments grouped by status
+  const myAppointments = useMemo(() => {
+    if (!appointments) return { pending: [], accepted: [], past: [] };
+    return {
+      pending: appointments.filter((a) => a.status === 'pending'),
+      accepted: appointments
+        .filter((a) => a.status === 'accepted' && new Date(a.appointment_date) >= new Date())
+        .sort((a, b) => new Date(a.appointment_date).getTime() - new Date(b.appointment_date).getTime()),
+      past: appointments
+        .filter((a) => ['completed', 'rejected', 'cancelled'].includes(a.status))
+        .sort((a, b) => new Date(b.appointment_date).getTime() - new Date(a.appointment_date).getTime())
+        .slice(0, 3),
+    };
+  }, [appointments]);
+
+  // Handle booking
+  const handleBookAppointment = async () => {
+    if (!patientProfile?.id || !bookForm.appointment_date || !bookForm.appointment_time) return;
+    const doctor = patientProfile.assigned_doctors?.[0];
+    if (!doctor) return;
+
+    const dateTime = `${bookForm.appointment_date}T${bookForm.appointment_time}:00`;
+    await createAppointment({
+      patient_id: patientProfile.id,
+      doctor_id: doctor.id,
+      appointment_date: dateTime,
+      appointment_type: bookForm.appointment_type,
+      notes: bookForm.notes || undefined,
+    });
+    setShowBookDialog(false);
+    setBookForm({ appointment_date: '', appointment_time: '', appointment_type: 'consultation', notes: '' });
+    refetchAppointments();
+  };
   const latestSession = allSessions[0];
 
   // Patient info
@@ -889,6 +933,109 @@ export const PatientDashboard: React.FC = () => {
               predictionCounts={predictionCounts}
             />
 
+            {/* Appointments */}
+            <SpotlightCard className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-teal-400" />
+                  Appointments
+                </h3>
+                {patientProfile?.assigned_doctors?.[0] && (
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs gap-1 bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 border border-teal-500/30"
+                    onClick={() => setShowBookDialog(true)}
+                  >
+                    <CalendarDays className="h-3 w-3" />
+                    Book
+                  </Button>
+                )}
+              </div>
+
+              {/* Pending Requests */}
+              {myAppointments.pending.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-[10px] font-semibold text-yellow-400 uppercase tracking-wider mb-1.5">Pending</p>
+                  <div className="space-y-1.5">
+                    {myAppointments.pending.map((appt) => (
+                      <div key={appt.id} className="p-2.5 rounded-lg bg-yellow-500/5 border border-yellow-500/10">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-foreground truncate">
+                            Dr. {appt.doctor_name || 'Doctor'}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/10 text-yellow-400">
+                            pending
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          {new Date(appt.appointment_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {' '}at{' '}
+                          {new Date(appt.appointment_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">{appt.appointment_type.replace('_', ' ')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Accepted / Upcoming */}
+              {myAppointments.accepted.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1.5">Upcoming</p>
+                  <div className="space-y-1.5">
+                    {myAppointments.accepted.map((appt) => (
+                      <div key={appt.id} className="p-2.5 rounded-lg bg-green-500/5 border border-green-500/10">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-foreground truncate">
+                            Dr. {appt.doctor_name || 'Doctor'}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-green-500/10 text-green-400">
+                            accepted
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          {new Date(appt.appointment_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {' '}at{' '}
+                          {new Date(appt.appointment_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">{appt.appointment_type.replace('_', ' ')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Past */}
+              {myAppointments.past.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Recent</p>
+                  <div className="space-y-1.5">
+                    {myAppointments.past.map((appt) => (
+                      <div key={appt.id} className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-muted-foreground truncate">
+                            Dr. {appt.doctor_name || 'Doctor'}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                            appt.status === 'completed' ? 'bg-green-500/10 text-green-400'
+                              : appt.status === 'rejected' ? 'bg-red-500/10 text-red-400'
+                              : 'bg-slate-500/10 text-slate-400'
+                          }`}>
+                            {appt.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {myAppointments.pending.length === 0 && myAppointments.accepted.length === 0 && myAppointments.past.length === 0 && (
+                <p className="text-xs text-muted-foreground py-2">No appointments yet</p>
+              )}
+            </SpotlightCard>
+
             {/* Doctor Info */}
             {assignedDoctor && assignedDoctor !== 'Not Assigned' && (
               <DoctorInfoCard doctorName={assignedDoctor} />
@@ -918,6 +1065,100 @@ export const PatientDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Book Appointment Dialog */}
+      {showBookDialog && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative w-full max-w-md">
+            <SpotlightCard className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-teal-500/10">
+                    <CalendarDays className="h-5 w-5 text-teal-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground">Book Appointment</h3>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setShowBookDialog(false)} className="hover:bg-white/10">
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-muted-foreground block mb-1">Doctor</label>
+                  <div className="p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.05] text-sm text-foreground">
+                    Dr. {patientProfile?.assigned_doctors?.[0]?.name || assignedDoctor}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-muted-foreground block mb-1">Date</label>
+                    <Input
+                      type="date"
+                      value={bookForm.appointment_date}
+                      onChange={(e) => setBookForm((f) => ({ ...f, appointment_date: e.target.value }))}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="bg-white/[0.03] border-white/[0.08] text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground block mb-1">Time</label>
+                    <Input
+                      type="time"
+                      value={bookForm.appointment_time}
+                      onChange={(e) => setBookForm((f) => ({ ...f, appointment_time: e.target.value }))}
+                      className="bg-white/[0.03] border-white/[0.08] text-foreground"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm text-muted-foreground block mb-1">Type</label>
+                  <select
+                    value={bookForm.appointment_type}
+                    onChange={(e) => setBookForm((f) => ({ ...f, appointment_type: e.target.value as typeof bookForm.appointment_type }))}
+                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-md text-sm text-foreground px-3 py-2 outline-none focus:border-teal-500/50"
+                  >
+                    <option value="consultation">Consultation</option>
+                    <option value="follow_up">Follow Up</option>
+                    <option value="scan_review">Scan Review</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm text-muted-foreground block mb-1">Notes (optional)</label>
+                  <textarea
+                    value={bookForm.notes}
+                    onChange={(e) => setBookForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Any details for the doctor..."
+                    rows={3}
+                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-md text-sm text-foreground px-3 py-2 outline-none focus:border-teal-500/50 resize-none placeholder:text-muted-foreground"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-white/[0.1] text-muted-foreground hover:bg-white/5"
+                    onClick={() => setShowBookDialog(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600"
+                    onClick={handleBookAppointment}
+                    disabled={bookingAppt || !bookForm.appointment_date || !bookForm.appointment_time}
+                  >
+                    {bookingAppt ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {bookingAppt ? 'Booking...' : 'Book Appointment'}
+                  </Button>
+                </div>
+              </div>
+            </SpotlightCard>
+          </div>
+        </div>
+      )}
 
       {/* Report Modal */}
       {selectedSession && selectedSession.prediction && (
